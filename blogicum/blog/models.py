@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
-from .fields import MAX_NAME_LENGTH
+from .constants import MAX_NAME_LENGTH
 
 User = get_user_model()
 
@@ -65,6 +65,7 @@ class Post(CommonFields):
         verbose_name='Заголовок'
     )
     text = models.TextField(verbose_name='Текст')
+    image = models.ImageField(upload_to='post_images/', blank=True)
     pub_date = models.DateTimeField(
         verbose_name='Дата и время публикации',
         help_text=(
@@ -75,6 +76,7 @@ class Post(CommonFields):
     author = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
+        related_name='posts',
         verbose_name='Автор публикации'
     )
     location = models.ForeignKey(
@@ -114,4 +116,6 @@ class Comment(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE)
 
     class Meta:
+        verbose_name = 'Комментарий'
+        verbose_name_plural = 'Комментарии'
         ordering = ('created_at',)
