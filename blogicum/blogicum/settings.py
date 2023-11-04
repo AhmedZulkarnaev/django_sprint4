@@ -25,7 +25,10 @@ SECRET_KEY = 'django-insecure-u%417j=ce972fokip(jo-r_4_1!t_einq@8%hffixttv!6-!-$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+]
 
 
 # Application definition
@@ -137,12 +140,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CSRF_FAILURE_VIEW = 'pages.views.csrf_failure'
 
-
 EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
 
 EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'
 
-LOGIN_REDIRECT_URL = 'blog:index'
+LOGIN_REDIRECT_URL = 'blog:profile'
 
 LOGIN_URL = 'login'
 

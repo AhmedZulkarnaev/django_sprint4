@@ -10,10 +10,16 @@ from django.urls import reverse_lazy, reverse
 from django.contrib.auth.decorators import login_required
 from .forms import UserCreationForm
 from django.contrib.auth import login
+from django.contrib.auth.views import LoginView
+from django.db.models import Count
 
 from .models import Category, Post, User, Comment
 from .constants import POSTS_LIMIT
 from .forms import PostForm, CommentForm, UserProfileEditForm
+
+
+def count_comment(queryset):
+    return queryset.annotate(comment_count=Count('comments'))
 
 
 def get_published_posts(manager=Post.objects):
@@ -31,13 +37,10 @@ class PostListView(ListView):
     ordering = '-pub_date'
     paginate_by = POSTS_LIMIT
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        posts = self.get_queryset()
-        for post in posts:
-            post.comment_count = post.comments.count()
-        context['posts'] = posts
-        return context
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        queryset = count_comment(queryset)
+        return queryset
 
 
 class PostDetailView(DetailView):
@@ -105,10 +108,10 @@ def category_posts(request, category_slug):
         is_published=True
     )
     posts = get_published_posts().filter(category=category)
-
+    page_obj = count_comment(posts)
     context = {
         'category': category,
-        'post_list': posts
+        'page_obj': page_obj,
     }
 
     return render(request, template_name, context)
@@ -118,7 +121,7 @@ def category_posts(request, category_slug):
 def add_comment(request, pk):
     post = get_object_or_404(Post, pk=pk)
     form = CommentForm(request.POST)
-    if form.isvalid():
+    if form.is_valid():
         comment = form.save(commit=False)
         comment.author = request.user
         comment.post = post
@@ -138,7 +141,7 @@ def edit_comment(request, comment_id):
     else:
         form = CommentForm(instance=comment)
 
-    return render(request, 'blog/comment.html', {'form': form})
+    return render(request, 'blog/create.html', {'form': form})
 
 
 @login_required
@@ -150,7 +153,7 @@ def delete_comment(request, comment_id):
     else:
         form = CommentForm(instance=comment)
 
-    return render(request, 'blog/comment.html', {'form': form})
+    return render(request, 'blog/create.html', {'form': form})
 
 
 class UserRegistrationView(CreateView):
@@ -165,7 +168,12 @@ class UserRegistrationView(CreateView):
         return response
 
 
-@login_required
+class LoginView(LoginView):
+    def get_success_url(self):
+        username = self.request.user.get_username()
+        return reverse('blog:profile', args=[username])
+
+
 def user_profile(request, username):
     user = get_object_or_404(User, username=username)
     posts = user.posts.select_related(
@@ -173,16 +181,17 @@ def user_profile(request, username):
         'author',
         'location'
     ).filter(
-        is_published=True,
         pub_date__lt=Now(),
         category__is_published=True
-    ).order_by('-pub_date')
+    )
+    posts = count_comment(posts).order_by('-pub_date')
     paginator = Paginator(posts, POSTS_LIMIT)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     context = {
         'profile': user,
         'page_obj': page_obj,
+        'current_user': request.user
     }
     return render(request, 'blog/profile.html', context)
 
