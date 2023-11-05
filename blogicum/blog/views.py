@@ -48,6 +48,7 @@ class PostListView(ListView):
 
 
 # Класс для отображения деталей поста
+
 class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
@@ -57,16 +58,23 @@ class PostDetailView(DetailView):
             Post.objects.select_related('category'),
             pk=self.kwargs['post_id']
         )
-        if post.is_published or (self.request.user == post.author):
-            return post
-        else:
-            raise Http404
+
+        if (
+            not post.is_published
+                or not post.category.is_published
+                or post.pub_date > timezone.now()
+        ) and post.author != self.request.user:
+            raise Http404("Page not published")
+
+        return post
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form'] = CommentForm()
         context['comments'] = (
-            self.object.comments.select_related('author')
+            self.object.comments
+            .select_related('author')
+            .order_by('created_at')
         )
         return context
 
