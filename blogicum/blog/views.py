@@ -3,7 +3,7 @@ from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
-    CreateView, DeleteView, DetailView, ListView, UpdateView
+    CreateView, DetailView, ListView
 )
 from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -11,6 +11,8 @@ from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
 from django.db.models import Count, Q
 from django.db.models.functions import Now
+from django.http import Http404
+
 
 from .models import Category, Post, User, Comment
 from .constants import POSTS_LIMIT
@@ -51,10 +53,14 @@ class PostDetailView(DetailView):
     template_name = 'blog/detail.html'
 
     def get_object(self, queryset=None):
-        return get_object_or_404(
-            get_published_posts().select_related('category'),
+        post = get_object_or_404(
+            Post.objects.select_related('category'),
             pk=self.kwargs['post_id']
         )
+        if post.is_published or (self.request.user == post.author):
+            return post
+        else:
+            raise Http404
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -74,18 +80,42 @@ class DispatchMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-# Класс для обновления поста
-class PostUpdateView(LoginRequiredMixin, DispatchMixin, UpdateView):
-    model = Post
-    form_class = PostForm
-    template_name = 'blog/create.html'
+@login_required
+def post_update_view(request, post_id):
+    post = get_object_or_404(Post, pk=post_id)
+
+    # Проверка, является ли текущий пользователь автором поста
+    if request.user != post.author:
+        return redirect('blog:post_detail', post_id=post_id)
+
+    if request.method == 'POST':
+        form = PostForm(request.POST, request.FILES, instance=post)
+        if form.is_valid():
+            form.instance.is_published = True
+            form.save()
+            return redirect('blog:post_detail', post_id=post_id)
+    else:
+        form = PostForm(instance=post)
+
+    context = {
+        'form': form,
+        'post': post,
+    }
+
+    return render(request, 'blog/create.html', context)
 
 
 # Класс для удаления поста
-class PostDeleteView(LoginRequiredMixin, DispatchMixin, DeleteView):
-    model = Post
-    success_url = reverse_lazy('blog:index')
-    template_name = 'blog/create.html'
+@login_required
+def delete_post(request, post_id):
+    post = get_object_or_404(Post, pk=post_id)
+
+    if request.user != post.author:
+        return redirect('blog:post_detail', post_id=post_id)
+
+    if request.method == 'POST':
+        post.delete()
+        return redirect('blog:index')
 
 
 # Класс для создания поста
@@ -117,10 +147,11 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 # Функция для отображения постов в категории
 def category_posts(request, category_slug):
     template_name = 'blog/category.html'
-    category = get_object_or_404(
-        Category,
-        slug=category_slug
-    )
+    category = get_object_or_404(Category, slug=category_slug)
+
+    # Проверка, опубликована ли категория
+    if not category.is_published:
+        raise Http404
 
     posts = get_published_posts().filter(
         Q(category=category, author=request.user) | Q(category=category)
@@ -140,34 +171,34 @@ def category_posts(request, category_slug):
 
 # Функция для добавления комментария
 @login_required
-def add_comment(request, pk):
-    post = get_object_or_404(Post, pk=pk)
+def add_comment(request, post_id):
+    post = get_object_or_404(Post, pk=post_id)
     form = CommentForm(request.POST)
     if form.is_valid():
         comment = form.save(commit=False)
         comment.author = request.user
         comment.post = post
         comment.save()
-    return redirect('blog:post_detail', post_id=pk)
+    return redirect('blog:post_detail', post_id=post_id)
 
 
 # Функция для редактирования комментария
 @login_required
-def edit_comment(request, comment_id):
+def edit_comment(request, post_id, comment_id):
     comment = get_object_or_404(Comment, pk=comment_id)
-
+    if request.user != comment.author:
+        return redirect('blog:post_detail', post_id=post_id)
     if request.method == 'POST':
         form = CommentForm(request.POST, instance=comment)
         if form.is_valid():
             form.save()
-            return redirect('blog:post_detail', post_id=comment.post.pk)
+            return redirect('blog:post_detail', post_id=post_id)
     else:
         form = CommentForm(instance=comment)
 
     return render(request, 'blog/create.html', {'form': form})
 
 
-# Функция для удаления комментария
 @login_required
 def delete_comment(request, comment_id):
     comment = get_object_or_404(Comment, id=comment_id)
@@ -200,20 +231,16 @@ class LoginView(LoginView):
         return reverse('blog:profile', args=[username])
 
 
-# Функция для отображения профиля пользователя
-@login_required
 def user_profile(request, username):
     user = get_object_or_404(User, username=username)
     posts = user.posts.select_related('category', 'author', 'location')
-    if user == request.user or request.user.is_staff:
-        posts = posts.filter(
-            Q(category__is_published=True) | Q(category__is_published=False)
-        )
+
+    if user == request.user:
+        posts = posts.order_by('-pub_date')
+    elif request.user.is_staff:
+        posts = posts.order_by('-pub_date')
     else:
-        posts = posts.filter(
-            pub_date__lt=timezone.now(),
-            category__is_published=True
-        )
+        posts = get_published_posts(posts)
 
     posts = count_comment(posts).order_by('-pub_date')
     paginator = Paginator(posts, POSTS_LIMIT)
@@ -222,20 +249,18 @@ def user_profile(request, username):
     context = {
         'profile': user,
         'page_obj': page_obj,
-        'current_user': request.user
     }
     return render(request, 'blog/profile.html', context)
 
 
-# Функция для редактирования профиля пользователя
 @login_required
-def edit_profile(request, username):
-    user = get_object_or_404(User, username=username)
+def edit_profile(request):
+    user = request.user
     if request.method == 'POST':
         form = UserProfileEditForm(request.POST, instance=user)
         if form.is_valid():
             form.save()
-            return redirect('blog:profile', username=username)
+            return redirect('blog:profile', username=user.username)
     else:
         form = UserProfileEditForm(instance=user)
 

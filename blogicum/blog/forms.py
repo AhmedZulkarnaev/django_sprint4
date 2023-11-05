@@ -7,7 +7,7 @@ from .models import Post, Comment, User
 class PostForm(forms.ModelForm):
     class Meta:
         model = Post
-        exclude = ('author',)
+        exclude = ('author', 'is_published')
         widgets = {
             'pub_date': forms.DateInput(attrs={'type': 'date'})
         }
@@ -23,13 +23,7 @@ class UserCreationForm(UserCreationForm):
 
     class Meta:
         model = User
-        fields = UserCreationForm.Meta.fields + (
-            'username',
-            'first_name',
-            'last_name',
-            # 'date_of_birth',
-            # 'profile_picture',
-        )
+        fields = UserCreationForm.Meta.fields + ('first_name', 'last_name')
 
 
 class UserProfileEditForm(UserChangeForm):
