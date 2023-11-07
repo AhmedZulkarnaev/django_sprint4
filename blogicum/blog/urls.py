@@ -29,19 +29,20 @@ urlpatterns = [
     ),
     path(
         'posts/<int:post_id>/comment/',
-        views.add_comment,
+        views.CommentCreateView.as_view(),
         name='add_comment'
     ),
     path(
-        'posts/<int:post_id>/edit/<int:comment_id>/',
-        views.edit_comment,
+        'posts/<int:post_id>/edit/<int:pk>/',
+        views.CommentUpdateView.as_view(),
         name='edit_comment'
     ),
     path(
-        'post/<int:post_id>/comment/<int:comment_id>/delete/',
-        views.delete_comment,
+        'posts/<post_id>/delete_comment/<comment_id>/',
+        views.CommentDeleteView.as_view(),
         name='delete_comment'
     ),
+
     path('profile/<str:username>/', views.user_profile, name='profile'),
     path("edit_profile/", views.edit_profile, name="edit_profile")
 ]

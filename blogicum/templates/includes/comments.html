@@ -21,10 +21,10 @@
       {{ comment.text|linebreaksbr }}
     </div>
     {% if user == comment.author %}
-      <a class="btn btn-sm text-muted" href="{% url 'blog:edit_comment' post_id=comment.post.id comment_id=comment.id %}" role="button">
-        Редактировать комментарий
+      <a href="{% url 'blog:edit_comment' post_id=comment.post.id pk=comment.id %}" role="button">
+          Редактировать комментарий
       </a>
-      <a class="btn btn-sm text-muted" href="{% url 'blog:delete_comment' post_id=comment.post.id comment_id=comment.id %}" role="button">
+      <a href="{% url 'blog:delete_comment' post_id=comment.post.id comment_id=comment.id %}" role="button">
         Удалить комментарий
       </a>
     {% endif %}
