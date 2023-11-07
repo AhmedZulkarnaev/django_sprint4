@@ -124,6 +124,7 @@ def delete_post(request, post_id):
     if request.method == 'POST':
         post.delete()
         return redirect('blog:index')
+    return render(request, 'blog/create.html', {'post': post})
 
 
 # Класс для создания поста
@@ -177,25 +178,35 @@ def category_posts(request, category_slug):
     return render(request, template_name, context)
 
 
-# Функция для добавления комментария
 @login_required
 def add_comment(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
-    form = CommentForm(request.POST)
-    if form.is_valid():
-        comment = form.save(commit=False)
-        comment.author = request.user
-        comment.post = post
-        comment.save()
-    return redirect('blog:post_detail', post_id=post_id)
+
+    if request.method == 'POST':
+        form = CommentForm(request.POST)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.post = post
+            comment.author = request.user
+            comment.save()
+            return redirect('blog:post_detail', post_id=post_id)
+    else:
+        form = CommentForm()
+
+    context = {
+        'form': form,
+        'post': post,
+    }
+
+    return render(request, 'blog/create.html', context)
 
 
-# Функция для редактирования комментария
-@login_required
 def edit_comment(request, post_id, comment_id):
     comment = get_object_or_404(Comment, pk=comment_id)
+
     if request.user != comment.author:
         return redirect('blog:post_detail', post_id=post_id)
+
     if request.method == 'POST':
         form = CommentForm(request.POST, instance=comment)
         if form.is_valid():
@@ -204,22 +215,34 @@ def edit_comment(request, post_id, comment_id):
     else:
         form = CommentForm(instance=comment)
 
-    return render(request, 'blog/create.html', {'form': form})
+    context = {
+        'form': form,
+        'comment': comment,
+        'post_id': post_id,
+    }
+
+    return render(request, 'blog/comment.html', context)
 
 
 @login_required
-def delete_comment(request, comment_id):
-    comment = get_object_or_404(Comment, id=comment_id)
+def delete_comment(request, post_id, comment_id):
+    comment = get_object_or_404(Comment, pk=comment_id)
+    if request.user != comment.author:
+        return redirect('blog:post_detail', post_id=post_id)
+
     if request.method == 'POST':
         comment.delete()
-        return redirect('blog:post_detail', post_id=comment.post.pk)
+        return redirect('blog:post_detail', post_id=post_id)
     else:
         form = CommentForm(instance=comment)
+    context = {
+        'form': form,
+        'comment': comment,
+        'post_id': post_id,
+    }
+    return render(request, 'blog/comment.html', context)
 
-    return render(request, 'blog/create.html', {'form': form})
 
-
-# Класс для регистрации пользователей
 class UserRegistrationView(CreateView):
     template_name = 'registration/registration_form.html'
     form_class = UserCreationForm

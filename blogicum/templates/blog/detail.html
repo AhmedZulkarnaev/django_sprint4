@@ -27,14 +27,13 @@
         </h6>
         <p class="card-text">{{ post.text|linebreaksbr }}</p>
         {% if user == post.author %}
-          <div class="mb-2">
-            <a class="btn btn-sm text-muted" href="{% url 'blog:edit_post' post.id %}" role="button">
-              Отредактировать публикацию
-            </a>
-            <a class="btn btn-sm text-muted" href="{% url 'blog:delete_post' post.id %}" role="button">
-              Удалить публикацию
-            </a>
-          </div>
+        <div class="mb-2">
+          <a class="btn btn-sm text-muted" href="{% url 'blog:edit_post' post.id %}" role="button">
+            Отредактировать публикацию
+          </a>
+          <a class="btn btn-sm text-muted" href="{% url 'blog:delete_post' post.id %}" role="button">
+            Удалить публикацию
+          </a>
         {% endif %}
         {% include "includes/comments.html" %}
       </div>

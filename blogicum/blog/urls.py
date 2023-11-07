@@ -33,12 +33,12 @@ urlpatterns = [
         name='add_comment'
     ),
     path(
-        'posts/<int:post_id>/edit_comment/<int:comment_id>/',
+        'posts/<int:post_id>/edit/<int:comment_id>/',
         views.edit_comment,
         name='edit_comment'
     ),
     path(
-        'comment/<int:comment_id>/delete/',
+        'post/<int:post_id>/comment/<int:comment_id>/delete/',
         views.delete_comment,
         name='delete_comment'
     ),
