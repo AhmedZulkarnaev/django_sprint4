@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
-from django.db.models import Count, Q
+from django.db.models import Q, Count
 from django.db.models.functions import Now
 from django.http import Http404
 
@@ -17,11 +17,16 @@ from django.http import Http404
 from .models import Category, Post, User, Comment
 from .constants import POSTS_LIMIT
 from .forms import PostForm, CommentForm, UserProfileEditForm, UserCreationForm
+from .querysets import count_comment
 
 
-# Функция для аннотации количества комментариев к постам
-def count_comment(queryset):
-    return queryset.annotate(comment_count=Count('comments'))
+# Функция для пагинации постов
+def paginate_posts(request, posts, limit):
+    paginator = Paginator(posts, limit)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    return page_obj
 
 
 # Функция для получения опубликованных постов
@@ -42,13 +47,16 @@ class PostListView(ListView):
     paginate_by = POSTS_LIMIT
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        queryset = count_comment(queryset)
+        queryset = super().get_queryset().filter(is_published=True)
+        queryset = queryset.select_related('category', 'author', 'location')
+        queryset = self.count_comment(queryset)
         return queryset
+
+    def count_comment(self, queryset):
+        return queryset.annotate(comment_count=Count('comments'))
 
 
 # Класс для отображения деталей поста
-
 class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
@@ -65,7 +73,6 @@ class PostDetailView(DetailView):
                 or post.pub_date > timezone.now()
         ) and post.author != self.request.user:
             raise Http404("Page not published")
-
         return post
 
     def get_context_data(self, **kwargs):
@@ -88,20 +95,19 @@ class DispatchMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+# Фукнция для изменения поста
 @login_required
 def post_update_view(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
 
-    # Проверка, является ли текущий пользователь автором поста
     if request.user != post.author:
         return redirect('blog:post_detail', post_id=post_id)
 
-    if request.method == 'POST':
-        form = PostForm(request.POST, request.FILES, instance=post)
-        if form.is_valid():
-            form.instance.is_published = True
-            form.save()
-            return redirect('blog:post_detail', post_id=post_id)
+    form = PostForm(request.POST, request.FILES, instance=post)
+    if form.is_valid():
+        form.instance.is_published
+        form.save()
+        return redirect('blog:post_detail', post_id=post_id)
     else:
         form = PostForm(instance=post)
 
@@ -113,7 +119,7 @@ def post_update_view(request, post_id):
     return render(request, 'blog/create.html', context)
 
 
-# Класс для удаления поста
+# Функция для удаления поста
 @login_required
 def delete_post(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
@@ -135,14 +141,11 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        delayed_date = form.cleaned_data.get('pub_date')
-
-        if delayed_date and delayed_date > timezone.now():
-            form.instance.is_published = False
-            return super().form_valid(form)
-        else:
+        if form.instance.pub_date <= timezone.now():
             form.instance.is_published = True
-            return super().form_valid(form)
+        else:
+            form.instance.is_published = False
+        return super().form_valid(form)
 
     def get_success_url(self):
         return reverse(
@@ -156,19 +159,17 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 # Функция для отображения постов в категории
 def category_posts(request, category_slug):
     template_name = 'blog/category.html'
-    category = get_object_or_404(Category, slug=category_slug)
+    category = get_object_or_404(
+        Category,
+        slug=category_slug,
+        is_published=True
+    )
 
-    # Проверка, опубликована ли категория
-    if not category.is_published:
-        raise Http404
-
-    posts = get_published_posts().filter(
+    posts = get_published_posts().select_related('category').filter(
         Q(category=category, author=request.user) | Q(category=category)
     ).order_by('-pub_date')
 
-    paginator = Paginator(posts, POSTS_LIMIT)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
 
     context = {
         'category': category,
@@ -178,6 +179,7 @@ def category_posts(request, category_slug):
     return render(request, template_name, context)
 
 
+# Класс для регистрации пользователя
 class UserRegistrationView(CreateView):
     template_name = 'registration/registration_form.html'
     form_class = UserCreationForm
@@ -197,21 +199,20 @@ class LoginView(LoginView):
         return reverse('blog:profile', args=[username])
 
 
+# Функция для профиля пользователя
 def user_profile(request, username):
     user = get_object_or_404(User, username=username)
     posts = user.posts.select_related('category', 'author', 'location')
 
     if user == request.user:
         posts = posts.order_by('-pub_date')
-    elif request.user.is_staff:
-        posts = posts.order_by('-pub_date')
     else:
         posts = get_published_posts(posts)
 
+    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
+
     posts = count_comment(posts).order_by('-pub_date')
-    paginator = Paginator(posts, POSTS_LIMIT)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
     context = {
         'profile': user,
         'page_obj': page_obj,
@@ -219,6 +220,7 @@ def user_profile(request, username):
     return render(request, 'blog/profile.html', context)
 
 
+# Функция для изменения профиля пользователя
 @login_required
 def edit_profile(request):
     user = request.user
@@ -233,20 +235,20 @@ def edit_profile(request):
     return render(request, 'blog/create.html', {'form': form})
 
 
+# Класс для создания комментария
 class CommentCreateView(LoginRequiredMixin, CreateView):
     model = Comment
     form_class = CommentForm
     template_name = 'blog/create.html'
 
     def form_valid(self, form):
-        post_id = self.kwargs['post_id']
-        post = get_object_or_404(Post, pk=post_id)
-        form.instance.post = post
+        form.instance.post = get_object_or_404(Post, pk=self.kwargs['post_id'])
         form.instance.author = self.request.user
         form.save()
-        return redirect('blog:post_detail', post_id=post_id)
+        return redirect('blog:post_detail', post_id=self.kwargs['post_id'])
 
 
+# Миксин с общими полями
 class CommentMixin(LoginRequiredMixin):
     model = Comment
     form_class = CommentForm
@@ -260,9 +262,11 @@ class CommentMixin(LoginRequiredMixin):
         return reverse('blog:post_detail', kwargs={'post_id': post_id})
 
 
+# Класс для изменения комментария
 class CommentUpdateView(CommentMixin, UpdateView):
     pass
 
 
+# Класс для удаления комментария
 class CommentDeleteView(CommentMixin, DeleteView):
     pk_url_kwarg = "comment_id"
