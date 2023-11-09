@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
-from .constants import first_name_length, last_name_length
+from blog.constants import FIRST_NAME, LAST__NAME
 
 from .models import Post, Comment, User
 
@@ -16,12 +16,12 @@ class PostForm(forms.ModelForm):
 
 class UserCreationForm(UserCreationForm):
     first_name = forms.CharField(
-        max_length=first_name_length,
+        max_length=FIRST_NAME,
         required=True,
         help_text='Имя'
     )
     last_name = forms.CharField(
-        max_length=last_name_length,
+        max_length=LAST__NAME,
         required=True,
         help_text='Фамилия'
     )
