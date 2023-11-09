@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
-from django.db.models import Q, Count
+from django.db.models import Q
 from django.db.models.functions import Now
 from django.http import Http404
 
@@ -42,18 +42,14 @@ def get_published_posts(manager=Post.objects):
 class PostListView(ListView):
     model = Post
     template_name = 'blog/index.html'
-    queryset = get_published_posts().select_related('category')
-    ordering = '-pub_date'
     paginate_by = POSTS_LIMIT
 
     def get_queryset(self):
-        queryset = super().get_queryset().filter(is_published=True)
-        queryset = queryset.select_related('category', 'author', 'location')
-        queryset = self.count_comment(queryset)
+        queryset = get_published_posts().select_related('category').order_by(
+            '-pub_date'
+        )
+        queryset = count_comment(queryset)
         return queryset
-
-    def count_comment(self, queryset):
-        return queryset.annotate(comment_count=Count('comments'))
 
 
 # Класс для отображения деталей поста
@@ -95,7 +91,6 @@ class DispatchMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-# Фукнция для изменения поста
 @login_required
 def post_update_view(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
@@ -141,11 +136,14 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        if form.instance.pub_date <= timezone.now():
-            form.instance.is_published = True
-        else:
+        delayed_date = form.cleaned_data.get('pub_date')
+
+        if delayed_date > timezone.now():
             form.instance.is_published = False
-        return super().form_valid(form)
+            return super().form_valid(form)
+        else:
+            form.instance.is_published
+            return super().form_valid(form)
 
     def get_success_url(self):
         return reverse(
@@ -164,13 +162,10 @@ def category_posts(request, category_slug):
         slug=category_slug,
         is_published=True
     )
-
     posts = get_published_posts().select_related('category').filter(
         Q(category=category, author=request.user) | Q(category=category)
     ).order_by('-pub_date')
-
     page_obj = paginate_posts(request, posts, POSTS_LIMIT)
-
     context = {
         'category': category,
         'page_obj': page_obj,
@@ -208,8 +203,6 @@ def user_profile(request, username):
         posts = posts.order_by('-pub_date')
     else:
         posts = get_published_posts(posts)
-
-    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
 
     posts = count_comment(posts).order_by('-pub_date')
     page_obj = paginate_posts(request, posts, POSTS_LIMIT)
