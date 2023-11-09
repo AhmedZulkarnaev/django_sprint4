@@ -5,10 +5,8 @@
 {% block content %}
   <h1 class="text-center">Публикации в категории - {{ category.title }}</h1>
   <p class="col-6 offset-3 mb-5 lead text-center">{{ category.description }}</p>
-  {% for post in page_obj %}
-    <article class="mb-5">  
-      {% include "includes/post_card.html" %}
-    </article>   
+  {% for post in page_obj %}  
+      {% include "includes/post_card.html" %} 
   {% endfor %}
   {% include "includes/paginator.html" %}
 {% endblock %}
