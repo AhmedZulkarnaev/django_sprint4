@@ -21,7 +21,7 @@
       {{ comment.text|linebreaksbr }}
     </div>
     {% if user == comment.author %}
-      <a href="{% url 'blog:edit_comment' post_id=comment.post.id pk=comment.id %}" role="button">
+      <a href="{% url 'blog:edit_comment' post_id=comment.post.id comment_pk=comment.id %}" role="button">
           Редактировать комментарий
       </a>
       <a href="{% url 'blog:delete_comment' post_id=comment.post.id comment_id=comment.id %}" role="button">

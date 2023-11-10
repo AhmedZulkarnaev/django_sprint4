@@ -33,7 +33,7 @@ urlpatterns = [
         name='add_comment'
     ),
     path(
-        'posts/<int:post_id>/edit/<int:pk>/',
+        'posts/<int:post_id>/edit/<int:comment_pk>/',
         views.CommentUpdateView.as_view(),
         name='edit_comment'
     ),

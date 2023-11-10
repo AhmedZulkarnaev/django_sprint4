@@ -9,10 +9,8 @@ from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
-from django.db.models import Q, Count
 from django.db.models.functions import Now
 from django.http import Http404
-
 
 from .models import Category, Post, User, Comment
 from .constants import POSTS_LIMIT
@@ -31,10 +29,13 @@ def paginate_posts(request, posts, limit):
 
 # Функция для получения опубликованных постов
 def get_published_posts(manager=Post.objects):
-    return manager.filter(
-        pub_date__lte=Now(),
-        is_published=True,
-        category__is_published=True,
+    return (
+        manager.filter(
+            pub_date__lte=Now(),
+            is_published=True,
+            category__is_published=True,
+        )
+        .select_related('category', 'author', 'location')
     )
 
 
@@ -50,8 +51,8 @@ class PostListView(ListView):
         return queryset
 
     def annotate_comment_count(self, queryset):
-        queryset = queryset.select_related('category', 'author', 'location')
-        queryset = queryset.annotate(comment_count=Count('comments'))
+        queryset = queryset
+        queryset = count_comment(queryset)
 
         return queryset
 
@@ -60,6 +61,8 @@ class PostListView(ListView):
 class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
+    model = Post
+    template_name
 
     def get_object(self, queryset=None):
         post = get_object_or_404(
@@ -69,8 +72,8 @@ class PostDetailView(DetailView):
 
         if (
             not post.is_published
-                or not post.category.is_published
-                or post.pub_date > timezone.now()
+            or not post.category.is_published
+            or post.pub_date > timezone.now()
         ) and post.author != self.request.user:
             raise Http404("Page not published")
         return post
@@ -78,11 +81,7 @@ class PostDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form'] = CommentForm()
-        context['comments'] = (
-            self.object.comments
-            .select_related('author')
-            .order_by('created_at')
-        )
+        context['comments'] = self.object.comments.select_related('author')
         return context
 
 
@@ -102,13 +101,12 @@ def post_update_view(request, post_id):
     if request.user != post.author:
         return redirect('blog:post_detail', post_id=post_id)
 
-    form = PostForm(request.POST, request.FILES, instance=post)
+    form = PostForm(request.POST or None, request.FILES, instance=post)
     if form.is_valid():
         form.instance.is_published
         form.save()
         return redirect('blog:post_detail', post_id=post_id)
-    else:
-        form = PostForm(instance=post)
+    form = PostForm(instance=post)
 
     context = {
         'form': form,
@@ -140,14 +138,11 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        delayed_date = form.cleaned_data.get('pub_date')
-
-        if delayed_date > timezone.now():
+        # На счет этого не пойму(
+        if form.cleaned_data['pub_date'] > timezone.now():
             form.instance.is_published = False
-            return super().form_valid(form)
-        else:
-            form.instance.is_published
-            return super().form_valid(form)
+
+        return super().form_valid(form)
 
     def get_success_url(self):
         return reverse(
@@ -166,8 +161,10 @@ def category_posts(request, category_slug):
         slug=category_slug,
         is_published=True
     )
-    posts = get_published_posts().select_related('category').filter(
-        Q(category=category, author=request.user) | Q(category=category)
+    # Здесь тоже не уверен
+    posts = get_published_posts(manager=category.posts).filter(
+        is_published=True,
+        pub_date__lte=Now()
     ).order_by('-pub_date')
     page_obj = paginate_posts(request, posts, POSTS_LIMIT)
     context = {
@@ -221,13 +218,11 @@ def user_profile(request, username):
 @login_required
 def edit_profile(request):
     user = request.user
-    if request.method == 'POST':
-        form = UserProfileEditForm(request.POST, instance=user)
-        if form.is_valid():
-            form.save()
-            return redirect('blog:profile', username=user.username)
-    else:
-        form = UserProfileEditForm(instance=user)
+    form = UserProfileEditForm(request.POST, instance=user)
+    if form.is_valid():
+        form.save()
+        return redirect('blog:profile', username=user.username)
+    form = UserProfileEditForm(instance=user)
 
     return render(request, 'blog/create.html', {'form': form})
 
@@ -261,7 +256,7 @@ class CommentMixin(LoginRequiredMixin):
 
 # Класс для изменения комментария
 class CommentUpdateView(CommentMixin, UpdateView):
-    pass
+    pk_url_kwarg = "comment_pk"
 
 
 # Класс для удаления комментария
