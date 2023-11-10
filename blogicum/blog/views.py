@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.db.models.functions import Now
 from django.http import Http404
 
@@ -45,10 +45,14 @@ class PostListView(ListView):
     paginate_by = POSTS_LIMIT
 
     def get_queryset(self):
-        queryset = get_published_posts().select_related('category').order_by(
-            '-pub_date'
-        )
-        queryset = count_comment(queryset)
+        queryset = get_published_posts().order_by('-pub_date')
+        queryset = self.annotate_comment_count(queryset)
+        return queryset
+
+    def annotate_comment_count(self, queryset):
+        queryset = queryset.select_related('category', 'author', 'location')
+        queryset = queryset.annotate(comment_count=Count('comments'))
+
         return queryset
 
 
