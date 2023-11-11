@@ -12,7 +12,10 @@ def count_comment(queryset):
 
 
 # Функция для пагинации постов
-# (Не пойму, а как мне без requests передавать страницы, в гугле не нашел ответа)
+# Не пойму,
+#  а как мне без requests передавать страницы,
+#  в гугле не нашел ответа
+
 def paginate_posts(request, posts, limit):
     paginator = Paginator(posts, limit)
     page_number = request.GET.get('page')
