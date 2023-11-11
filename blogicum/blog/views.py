@@ -1,5 +1,4 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -9,34 +8,13 @@ from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView
 from django.contrib.auth import login
-from django.db.models.functions import Now
 from django.http import Http404
 
-from .models import Category, Post, User, Comment
+
+from .models import Post, Category, Comment, User
 from .constants import POSTS_LIMIT
 from .forms import PostForm, CommentForm, UserProfileEditForm, UserCreationForm
-from .querysets import count_comment
-
-
-# Функция для пагинации постов
-def paginate_posts(request, posts, limit):
-    paginator = Paginator(posts, limit)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-
-    return page_obj
-
-
-# Функция для получения опубликованных постов
-def get_published_posts(manager=Post.objects):
-    return (
-        manager.filter(
-            pub_date__lte=Now(),
-            is_published=True,
-            category__is_published=True,
-        )
-        .select_related('category', 'author', 'location')
-    )
+from .querysets import count_comment, get_published_posts, paginate_posts
 
 
 # Класс для отображения списка постов
@@ -46,14 +24,8 @@ class PostListView(ListView):
     paginate_by = POSTS_LIMIT
 
     def get_queryset(self):
-        queryset = get_published_posts().order_by('-pub_date')
-        queryset = self.annotate_comment_count(queryset)
-        return queryset
-
-    def annotate_comment_count(self, queryset):
-        queryset = queryset
+        queryset = get_published_posts()
         queryset = count_comment(queryset)
-
         return queryset
 
 
@@ -101,12 +73,11 @@ def post_update_view(request, post_id):
     if request.user != post.author:
         return redirect('blog:post_detail', post_id=post_id)
 
-    form = PostForm(request.POST or None, request.FILES, instance=post)
+    form = PostForm(request.POST or None, request.FILES or None, instance=post)
     if form.is_valid():
         form.instance.is_published
         form.save()
         return redirect('blog:post_detail', post_id=post_id)
-    form = PostForm(instance=post)
 
     context = {
         'form': form,
@@ -138,10 +109,6 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        # На счет этого не пойму(
-        if form.cleaned_data['pub_date'] > timezone.now():
-            form.instance.is_published = False
-
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -161,11 +128,8 @@ def category_posts(request, category_slug):
         slug=category_slug,
         is_published=True
     )
-    # Здесь тоже не уверен
-    posts = get_published_posts(manager=category.posts).filter(
-        is_published=True,
-        pub_date__lte=Now()
-    ).order_by('-pub_date')
+
+    posts = get_published_posts(category.posts)
     page_obj = paginate_posts(request, posts, POSTS_LIMIT)
     context = {
         'category': category,
@@ -200,9 +164,7 @@ def user_profile(request, username):
     user = get_object_or_404(User, username=username)
     posts = user.posts.select_related('category', 'author', 'location')
 
-    if user == request.user:
-        posts = posts.order_by('-pub_date')
-    else:
+    if user != request.user:
         posts = get_published_posts(posts)
 
     posts = count_comment(posts).order_by('-pub_date')
@@ -218,12 +180,10 @@ def user_profile(request, username):
 @login_required
 def edit_profile(request):
     user = request.user
-    form = UserProfileEditForm(request.POST, instance=user)
+    form = UserProfileEditForm(request.POST or None, instance=user)
     if form.is_valid():
         form.save()
         return redirect('blog:profile', username=user.username)
-    form = UserProfileEditForm(instance=user)
-
     return render(request, 'blog/create.html', {'form': form})
 
 
