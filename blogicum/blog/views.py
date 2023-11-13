@@ -66,6 +66,7 @@ class DispatchMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+# Функция для редактирования постов
 @login_required
 def post_update_view(request, post_id):
     post = get_object_or_404(Post, pk=post_id)
@@ -130,7 +131,8 @@ def category_posts(request, category_slug):
     )
 
     posts = get_published_posts(category.posts)
-    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
+    page_number = request.GET.get('page')
+    page_obj = paginate_posts(page_number, posts, POSTS_LIMIT)
     context = {
         'category': category,
         'page_obj': page_obj,
@@ -167,8 +169,9 @@ def user_profile(request, username):
     if user != request.user:
         posts = get_published_posts(posts)
 
-    posts = count_comment(posts).order_by('-pub_date')
-    page_obj = paginate_posts(request, posts, POSTS_LIMIT)
+    posts = count_comment(posts)
+    page_number = request.GET.get('page')
+    page_obj = paginate_posts(page_number, posts, POSTS_LIMIT)
     context = {
         'profile': user,
         'page_obj': page_obj,

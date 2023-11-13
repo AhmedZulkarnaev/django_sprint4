@@ -8,17 +8,14 @@ from .models import Post
 
 # Функция для аннотации количества комментариев к постам
 def count_comment(queryset):
-    return queryset.annotate(comment_count=Count('comments'))
+    return queryset.annotate(comment_count=Count('comments')).order_by(
+        '-pub_date'
+    )
 
 
 # Функция для пагинации постов
-# Не пойму,
-#  а как мне без requests передавать страницы,
-#  в гугле не нашел ответа
-
-def paginate_posts(request, posts, limit):
+def paginate_posts(page_number, posts, limit):
     paginator = Paginator(posts, limit)
-    page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
     return page_obj
